@@ -90,6 +90,7 @@ error occurs, the script terminates with an exit status of 1.
 from __future__ import division, print_function
 
 import email.header
+import atexit
 import getopt
 import getpass
 import imaplib
@@ -102,6 +103,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import tempfile
 import time
 
 DEFAULT_LOG_LEVEL = "INFO"
@@ -115,18 +117,39 @@ SYSTEM_IMAP_FLAGS = set(
 )
 
 SSL_CERT_FILE = os.environ.get("SSL_CERT_FILE")
+COMMON_LINUX_AND_BSD_CERT_PATHS = [
+    "/etc/ssl/certs/ca-certificates.crt",      # Debian distros and Arch
+    "/etc/pki/tls/certs/ca-bundle.crt",        # RHEL-based distros
+    "/usr/local/share/certs/ca-root-nss.crt",  # FreeBSD
+    "/etc/ssl/cert.pem",                       # OpenBSD and FreeBSD
+]
+MAC_OS_X_KEYCHAINS = [
+    "/Library/Keychains/System.keychain",
+    "/System/Library/Keychains/SystemRootCertificates.keychain",
+]
+
 if not SSL_CERT_FILE:
-    COMMON_CERT_PATHS = [
-        "/etc/ssl/certs/ca-certificates.crt",      # Debian distros and Arch
-        "/etc/pki/tls/certs/ca-bundle.crt",        # Red Hat, Fedora and CentOS
-        "/usr/local/share/certs/ca-root-nss.crt",  # FreeBSD
-        "/etc/ssl/cert.pem",                       # OpenBSD and FreeBSD
-    ]
-    for path in COMMON_CERT_PATHS:
-        if os.path.exists(path):
-            SSL_CERT_FILE = path
-            break
-    else:
+    # On Mac OS X, the system certificates are generally not stored in PEM
+    # format, so they are dumped to a temporary file and SSL_CERT_FILE pointed
+    # there. Unfortunately, I have no clue how static the paths in
+    # MAC_OS_X_KEYCHAINS.
+    if sys.platform == "darwin":
+        argv = ["security", "find-certificate", "-a", "-p", "--"]
+        argv.extend(MAC_OS_X_KEYCHAINS)
+        with tempfile.NamedTemporaryFile(delete=False) as certfile:
+            atexit.register(os.unlink, certfile.name)
+            certfile.write(subprocess.check_output(argv))
+            SSL_CERT_FILE = certfile.name
+
+    # On Linux and BSD, system certificates will likely be stored in one of the
+    # following paths which are the defaults for the most popular distros.
+    elif sys.platform.startswith("linux") or "bsd" in sys.platform:
+        for path in COMMON_LINUX_AND_BSD_CERT_PATHS:
+            if os.path.exists(path):
+                SSL_CERT_FILE = path
+                break
+
+    if not SSL_CERT_FILE:
         raise Exception(
             "Unable to locate CA certificates. Please set the environment "
             "variable SSL_CERT_FILE to the location of the certificates."
