@@ -54,21 +54,21 @@ contains the messages to be used for the dry-run.
 
 ### Launching ###
 
-The basic usage for EIML is `eiml [OPTION...] LABELER`. Once the labeler is
-written, the way EIML is launched depends on how the script should be
-executed. When the labeler is a Python script, `LABELER` is given in the form of
+The basic usage for EIML is `eiml.py [OPTION...] LABELER`. Once the labeler is
+written, the way EIML is launched depends on how the script should be executed.
+When the labeler is a Python script, `LABELER` is given in the form of
 `$PATH_TO_PYTHON_SCRIPT:$FUNCTION_NAME`. For example, if EIML were executed
 using the example Python script, the invocation would look like this:
 
-    eiml ... examples/python-labeler.py:labeler
+    eiml.py ... examples/python-labeler.py:labeler
 
 If the last argument passed to EIML does not appear to be a Python script and
 function, it will be interpreted as a shell script and launched using `$SHELL -c
 "$LABELER"`, so launching EIML with the Bash script could look like either of
 the following two command assuming the Bash script has the executable bit set:
 
-    eiml ... ./examples/bash-labeler.sh
-    eiml ... "bash -c ./examples/bash-labeler.sh"
+    eiml.py ... ./examples/bash-labeler.sh
+    eiml.py ... "bash -c ./examples/bash-labeler.sh"
 
 When a username is not specified or a password file is not specified, EIML
 will prompt for either piece of the login credentials as needed. To learn about

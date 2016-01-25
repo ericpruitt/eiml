@@ -16,8 +16,8 @@
 Extended-IMAP Message Labeler (EIML) simplifies programmatic organization of
 emails on servers that support Gmail's label extensions.
 
-Usage: eiml [OPTION...] LABELER
-       eiml --auto-archive [OPTION...]
+Usage: eiml.py [OPTION...] LABELER
+       eiml.py --auto-archive [OPTION...]
 
 Options:
  --auto-archive             When specified, all messages in the Inbox that have
@@ -62,7 +62,7 @@ messages. For example, if there is a Python script named `mail-sorter.py`
 containing a function `classifier` which is responsible for labeling the
 messages, the invocation for EIML would be similar to this:
 
-    eiml ... mail-sorter.py:labeler
+    eiml.py ... mail-sorter.py:labeler
 
 The function should accept raw message data as input (for Python 2, the type of
 the raw data will be "str" while it will be "bytes" in Python 3) and yield
@@ -71,12 +71,12 @@ strings to be applied as labels.
 The other way to specify a labeler is with a shell command or script. The
 invocation could be something like this:
 
-    eiml ... 'grep -q "^Subject:.*URGENT" && echo Urgent; echo Inbox'
+    eiml.py ... 'grep -q "^Subject:.*URGENT" && echo Urgent; echo Inbox'
 
 Assuming "./bin/email-sorter" has the executable bit set, a subprocess
 invocation could also look like this:
 
-    eiml ... ./bin/email-sorter
+    eiml.py ... ./bin/email-sorter
 
 The shell used is determined by the `SHELL` environment variable and defaults
 to `/bin/sh` when the environment variable is not set.
