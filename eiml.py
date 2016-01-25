@@ -680,9 +680,15 @@ def options_from_argv(argv, allow_log_level_change=True):
 
 if __name__ == "__main__":
     try:
+        # Work around for bug #19502 (http://bugs.python.org/issue19502).
+        if sys.version_info >= (3, 3):
+            datefmt = "%Y-%m-%dT%H:%M:%S%z"
+        else:
+            datefmt = "%Y-%m-%dT%H:%M:%S%Z"
+
         logging.basicConfig(
             format="%(asctime)s <%(levelname)s> %(funcName)s: %(message)s",
-            datefmt="%Y-%m-%dT%H:%M:%S%z",
+            datefmt=datefmt
         )
 
         failure_status = 2
