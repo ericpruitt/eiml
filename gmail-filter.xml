@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='UTF-8'?><feed xmlns='http://www.w3.org/2005/Atom' xmlns:apps='http://schemas.google.com/apps/2006'>
+        <title>Mail Filters</title>
+        <id>tag:mail.google.com,2008:filters:1411084602751</id>
+        <updated>2016-01-19T24:23:29Z</updated>
+        <author>
+                <name>Eric Pruitt</name>
+                <email>ericpruitt@google.com</email>
+        </author>
+        <entry>
+                <category term='filter'></category>
+                <title>Mail Filter</title>
+                <id>tag:mail.google.com,2008:filter:1411084602751</id>
+                <updated>2016-01-19T24:23:29Z</updated>
+                <content></content>
+                <apps:property name='excludeChats' value='true'/>
+                <apps:property name='label' value='Unprocessed'/>
+                <apps:property name='shouldArchive' value='true'/>
+                <apps:property name='size' value='0'/>
+                <apps:property name='sizeOperator' value='s_sl'/>
+                <apps:property name='sizeUnit' value='s_sb'/>
+        </entry>
+</feed>
