@@ -39,8 +39,8 @@ addition or deletion, respectively instead of a label assignment. IMAP flags
 control special properties of messages like whether or not the message is
 marked as read; a script that returned "+Seen" as part of its output would
 cause a message to be marked "Read." For more information on the flags, refer
-to [section 2.3.2 RFC 3501][rfc-3501-2.3.2]. Once a message is processed, it is
-**not** moved to the Inbox by default. A message must explicitly be moved to
+to [section 2.3.2 of RFC 3501][rfc-3501-2.3.2]. Once a message is processed, it
+is **not** moved to the Inbox by default. A message must explicitly be moved to
 the Inbox by the labeler returning the string "Inbox". When no labels are
 assigned to a message, the message is ignored in future polling cycles until
 EIML is restarted, so it is strongly recommended that labelers always return at
@@ -101,8 +101,8 @@ read the Gmail help page [Using filters][using-filters].
 ### Tying it Together ###
 
 Once EIML is configured as desired, create a shell script to launch it with the
-necessary parameters. EIML will automatically reconnect to the IMAP server for
-when it encounters common ephemeral issues, but it may still be a good idea to
+necessary parameters. EIML will automatically reconnect to the IMAP server when
+it encounters common ephemeral issues, but it may still be a good idea to
 automatically relaunch the script if it exits with a return code of 1 for
 maximum resilience.
 
