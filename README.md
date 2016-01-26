@@ -107,10 +107,25 @@ read the Gmail help page [Using filters][using-filters].
 ### Tying it Together ###
 
 Once EIML is configured as desired, create a shell script to launch it with the
-necessary parameters. EIML will automatically reconnect to the IMAP server when
-it encounters common ephemeral issues, but it may still be a good idea to
-automatically relaunch the script if it exits with a return code of 1 for
-maximum resilience.
+necessary parameters. EIML will exit with a status of 2 if there is an error
+that likely cannot be resolved without human intervention such as incorrect
+login information or invalid command-line flags, and it will exit with a status
+of 1 for all other errors.
+
+Since an exit status of 1 often indicates a temporary network or server-side
+issue, it may be a good idea to automatically relaunch EIML after a delay if it
+terminates with an exit status of 1 for improved resilience, e.g.:
+
+    #!/bin/sh
+    while true; do
+        ./eiml.py ...
+        exit_status="$?"
+        if [ "$exit_status" -ne 1 ]; then
+            exit "$exit_status"
+        else
+            sleep 60
+        fi
+    done
 
 Options
 -------

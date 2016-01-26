@@ -83,9 +83,10 @@ to `/bin/sh` when the environment variable is not set.
 
 If no labeler is specified, the "--auto-archive" flag must be specified.
 
-This script will exit with an exit status of 2 if there was a problem during
-the initialization phase such as invalid command line options. If an unexpected
-error occurs, the script terminates with an exit status of 1.
+EIML will exit with a status of 2 if there is an error that likely cannot be
+resolved without human intervention such as incorrect login information or
+invalid command-line flags, and it will exit with a status of 1 for all other
+errors.
 """
 from __future__ import division, print_function
 
@@ -111,6 +112,14 @@ LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 assert DEFAULT_LOG_LEVEL in LOG_LEVELS, "Invalid value for DEFAULT_LOG_LEVEL."
 
 PYTHON_3 = sys.version_info.major > 2
+
+EXIT_STATUS_GENERAL_IMAP_ERROR = 1
+EXIT_STATUS_UNRECOVERABLE_ERROR = 2
+
+UNRECOVERABLE_RESPONSES = {"AUTHENTICATIONFAILED", "NONEXISTENT"}
+UNRECOVERABLE_RESPONSE_REGEX = re.compile(
+    "\[(" + "|".join(map(re.escape, UNRECOVERABLE_RESPONSES)) + ")\]"
+)
 
 SYSTEM_IMAP_FLAGS = set(
     ("Seen", "Answered", "Flagged", "Deleted", "Draft", "Recent")
@@ -721,10 +730,7 @@ if __name__ == "__main__":
             datefmt=datefmt
         )
 
-        failure_status = 2
         options = options_from_argv(sys.argv[1:])
-        failure_status = 1
-
         logging.debug("SSL certificate file: %r", SSL_CERT_FILE)
 
         if options.get("dry_run"):
@@ -750,24 +756,33 @@ if __name__ == "__main__":
                 # reconnect after encountering imaplib.IMAP4.abort errors.
                 logging.warn("Connection aborted: %s", exc)
 
-    except Exception as exc:
-        # Make the error message a tad more user-friendly before displaying it.
+    except (Exception, KeyboardInterrupt) as exc:
+        failure_status = EXIT_STATUS_UNRECOVERABLE_ERROR
+
+        if (isinstance(exc, (imaplib.IMAP4.error, IMAPError)) and
+          not UNRECOVERABLE_RESPONSE_REGEX.search(str(exc))):
+            failure_status = EXIT_STATUS_GENERAL_IMAP_ERROR
+
         if isinstance(exc, imaplib.IMAP4.error):
             cls = "IMAPError"
+        elif isinstance(exc, KeyboardInterrupt):
+            exc = Error("Application received SIGINT.")
+            cls = "UncaughtSignal"
         else:
             cls = exc.__class__.__name__
 
-        # Regex from http://stackoverflow.com/a/12867228; thanks Nick Lombard.
-        error = re.sub("((?<=[a-z0-9])[A-Z]|(?!^)[A-Z](?=[a-z]))", " \\1", cls)
-        if isinstance(exc, Error):
-            # The "critical" method is used here because the error
-            # module-specific exceptions raised by the script should be
-            # resolvable without a stack trace; logging.exception outputs the
-            # stack trace in addition to the stringified error.
+        if isinstance(exc, (Error, imaplib.IMAP4.error, getopt.GetoptError)):
+            # The "critical" method is used here because certain types of
+            # exceptions can be resolved without seeing the entire stack trace;
+            # in addition to logging the stringified error, logging.exception
+            # also logs a full stack trace.
             logging_method = logging.critical
         else:
             logging_method = logging.exception
 
+        # The exception name is made a bit more user-friendly before it is
+        # logged. Regex taken from http://stackoverflow.com/a/12867228; thanks
+        # Nick Lombard.
+        error = re.sub("((?<=[a-z0-9])[A-Z]|(?!^)[A-Z](?=[a-z]))", " \\1", cls)
         logging_method("%s: %s", error.replace("Exception", "Error"), exc)
         sys.exit(failure_status)
-
