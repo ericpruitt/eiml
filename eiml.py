@@ -89,8 +89,8 @@ error occurs, the script terminates with an exit status of 1.
 """
 from __future__ import division, print_function
 
-import email.header
 import atexit
+import email.header
 import getopt
 import getpass
 import imaplib
@@ -116,23 +116,31 @@ SYSTEM_IMAP_FLAGS = set(
     ("Seen", "Answered", "Flagged", "Deleted", "Draft", "Recent")
 )
 
-SSL_CERT_FILE = os.environ.get("SSL_CERT_FILE")
+# On Linux and BSD distros, system certificates are commonly stored in these
+# locations. The paths were taken from https://bugs.python.org/issue13655.
 COMMON_LINUX_AND_BSD_CERT_PATHS = [
     "/etc/ssl/certs/ca-certificates.crt",      # Debian distros and Arch
     "/etc/pki/tls/certs/ca-bundle.crt",        # RHEL-based distros
     "/usr/local/share/certs/ca-root-nss.crt",  # FreeBSD
     "/etc/ssl/cert.pem",                       # OpenBSD and FreeBSD
 ]
+
+# Locations of keychains on Mac OS X that store certificates. Unfortunately I
+# have no clue how static these paths are and for what versions of Mac OS X
+# they are valid, but these same paths appear in Google's Certificate
+# Transparency project (http://www.certificate-transparency.org/), so it's
+# probably safe to rely on them.
 MAC_OS_X_KEYCHAINS = [
     "/Library/Keychains/System.keychain",
     "/System/Library/Keychains/SystemRootCertificates.keychain",
 ]
 
+SSL_CERT_FILE = os.environ.get("SSL_CERT_FILE")
 if not SSL_CERT_FILE:
     # On Mac OS X, the system certificates are generally not stored in PEM
-    # format, so they are dumped to a temporary file and SSL_CERT_FILE pointed
-    # there. Unfortunately, I have no clue how static the paths in
-    # MAC_OS_X_KEYCHAINS.
+    # format, so they are converted from the native keychain format and dumped
+    # to a temporary file. SSL_CERT_FILE is then set to the path of the
+    # temporary file.
     if sys.platform == "darwin":
         argv = ["security", "find-certificate", "-a", "-p", "--"]
         argv.extend(MAC_OS_X_KEYCHAINS)
@@ -141,8 +149,7 @@ if not SSL_CERT_FILE:
             certfile.write(subprocess.check_output(argv))
             SSL_CERT_FILE = certfile.name
 
-    # On Linux and BSD, system certificates will likely be stored in one of the
-    # following paths which are the defaults for the most popular distros.
+    # On Linux and BSD, search for certificates in frequently used locations.
     elif sys.platform.startswith("linux") or "bsd" in sys.platform:
         for path in COMMON_LINUX_AND_BSD_CERT_PATHS:
             if os.path.exists(path):
@@ -718,6 +725,8 @@ if __name__ == "__main__":
         options = options_from_argv(sys.argv[1:])
         failure_status = 1
 
+        logging.debug("SSL certificate file: %r", SSL_CERT_FILE)
+
         if options.get("dry_run"):
             logging.warn("This is a dry run; no changes will be applied.")
 
@@ -731,11 +740,15 @@ if __name__ == "__main__":
                 logging.debug("main(%s)", ", ".join(arguments))
                 main(**options)
             except imaplib.IMAP4.readonly:
+                # The imaplib.IMAP4.readonly class inherits from
+                # imaplib.IMAP4.abort. The program should not automatically
+                # reconnect if this error is encountered, so an explicit
+                # exception handling block is required.
                 raise
             except imaplib.IMAP4.abort as exc:
                 # Per the imaplib documentation, applications should simply
                 # reconnect after encountering imaplib.IMAP4.abort errors.
-                logging.critical("Connection aborted: %s", exc)
+                logging.warn("Connection aborted: %s", exc)
 
     except Exception as exc:
         # Make the error message a tad more user-friendly before displaying it.
@@ -751,9 +764,10 @@ if __name__ == "__main__":
             # module-specific exceptions raised by the script should be
             # resolvable without a stack trace; logging.exception outputs the
             # stack trace in addition to the stringified error.
-            logging.critical("%s: %s", error.replace("Exception", "Error"), exc)
+            logging_method = logging.critical
         else:
-            logging.exception("%s: %s", error.replace("Exception", "Error"), exc)
+            logging_method = logging.exception
 
+        logging_method("%s: %s", error.replace("Exception", "Error"), exc)
         sys.exit(failure_status)
 
