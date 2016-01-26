@@ -48,7 +48,13 @@ least one label lest the script's memory usage grow indefinitely.
 
 Once a script has been created, it can be tested using the "--dry-run" flag and
 the "--source-label"; the "--source-label" flag should be set to whatever label
-contains the messages to be used for the dry-run.
+contains the messages to be used for the dry-run. In most cases, the desired
+dry-run invocation should look like this if an incoming mail filter
+specifically for EIML has not yet been setup:
+
+    eiml.py ... --dry-run --source-label=Inbox LABELER
+
+This will run make EIML simulate applying labels to every message in the Inbox.
 
   [rfc-3501-2.3.2]: https://tools.ietf.org/html/rfc3501#section-2.3.2
 
