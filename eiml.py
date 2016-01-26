@@ -656,14 +656,14 @@ def options_from_argv(argv, allow_log_level_change=True):
         if options["polling_period"] < 0:
             raise ValueError("Polling period must be at least 0.")
 
+    if "username" not in options:
+        options["username"] = raw_input("Email address: ").strip()
+
     try:
         with open(options.pop("password_file")) as iostream:
             options["password"] = iostream.read().rstrip("\r\n")
     except KeyError:
         options["password"] = getpass.getpass()
-
-    if "username" not in options:
-        options["username"] = raw_input("Email address: ").strip()
 
     if "labeler" in options:
         labeler = options["labeler"]
