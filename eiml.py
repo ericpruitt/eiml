@@ -113,7 +113,7 @@ assert DEFAULT_LOG_LEVEL in LOG_LEVELS, "Invalid value for DEFAULT_LOG_LEVEL."
 
 PYTHON_3 = sys.version_info.major > 2
 
-EXIT_STATUS_GENERAL_IMAP_ERROR = 1
+EXIT_STATUS_POSSIBLY_RECOVERABLE_ERROR = 1
 EXIT_STATUS_UNRECOVERABLE_ERROR = 2
 
 UNRECOVERABLE_RESPONSES = {"AUTHENTICATIONFAILED", "NONEXISTENT"}
@@ -143,42 +143,6 @@ MAC_OS_X_KEYCHAINS = [
     "/Library/Keychains/System.keychain",
     "/System/Library/Keychains/SystemRootCertificates.keychain",
 ]
-
-SSL_CERT_FILE = os.environ.get("SSL_CERT_FILE")
-if not SSL_CERT_FILE:
-    # On Mac OS X, the system certificates are generally not stored in PEM
-    # format, so they are converted from the native keychain format and dumped
-    # to a temporary file. SSL_CERT_FILE is then set to the path of the
-    # temporary file.
-    if sys.platform == "darwin":
-        argv = ["security", "find-certificate", "-a", "-p", "--"]
-        argv.extend(MAC_OS_X_KEYCHAINS)
-        with tempfile.NamedTemporaryFile(delete=False) as certfile:
-            atexit.register(os.unlink, certfile.name)
-            certfile.write(subprocess.check_output(argv))
-            SSL_CERT_FILE = certfile.name
-
-    # On Linux and BSD, search for certificates in frequently used locations.
-    elif sys.platform.startswith("linux") or "bsd" in sys.platform:
-        for path in COMMON_LINUX_AND_BSD_CERT_PATHS:
-            if os.path.exists(path):
-                SSL_CERT_FILE = path
-                break
-
-    if not SSL_CERT_FILE:
-        raise Exception(
-            "Unable to locate CA certificates. Please set the environment "
-            "variable SSL_CERT_FILE to the location of the certificates."
-        )
-
-if hasattr(ssl, "PROTOCOL_TLSv1_2"):
-    SSL_VERSION = ssl.PROTOCOL_TLSv1_2
-elif hasattr(ssl, "PROTOCOL_TLSv1_1"):
-    SSL_VERSION = ssl.PROTOCOL_TLSv1_1
-elif hasattr(ssl, "PROTOCOL_TLSv1"):
-    SSL_VERSION = ssl.PROTOCOL_TLSv1
-else:
-    raise Exception("SSL library does not appear to have TLS support.")
 
 
 class Error(Exception):
@@ -244,6 +208,67 @@ class IMAP4ValidatedSSL(imaplib.IMAP4_SSL):
     validation and is otherwise identical to IMAP4_SSL. If the server
     certificate is invalid, an SSLCertificateError will be raised.
     """
+    _ca_certs = os.environ.get("SSL_CERT_FILE")
+    _ssl_version = None
+
+    @classmethod
+    def _get_ca_certs(cls):
+        """
+        Return value to be used as `ca_certs` parameter of ssl.wrap_socket.
+        """
+        if not cls._ca_certs:
+            # On Mac OS X, the system certificates are generally not stored in
+            # PEM format, so they are converted from the native keychain format
+            # and dumped to a temporary file. SSL_CERT_FILE is then set to the
+            # path of the temporary file.
+            if sys.platform == "darwin":
+                argv = ["security", "find-certificate", "-a", "-p", "--"]
+                argv.extend(MAC_OS_X_KEYCHAINS)
+                with tempfile.NamedTemporaryFile(delete=False) as certfile:
+                    atexit.register(os.unlink, certfile.name)
+                    certfile.write(subprocess.check_output(argv))
+                    cls._ca_certs = certfile.name
+
+            # On Linux and BSD, search for certificates in frequently used
+            # locations.
+            elif sys.platform.startswith("linux") or "bsd" in sys.platform:
+                for path in COMMON_LINUX_AND_BSD_CERT_PATHS:
+                    if os.path.exists(path):
+                        cls._ca_certs = path
+                        break
+
+            if cls._ca_certs:
+                logging.debug("CA certificates: %r", cls._ca_certs)
+            else:
+                raise Error(
+                    "Unable to locate CA certificates. Please set the environment "
+                    "variable SSL_CERT_FILE to the location of the certificates."
+                )
+
+        return cls._ca_certs
+
+    @classmethod
+    def _get_ssl_version(cls):
+        """
+        Return value to be used as `ssl_version` parameter of ssl.wrap_socket.
+        """
+        if not cls._ssl_version:
+            protocols = [
+                "PROTOCOL_TLSv1_2",
+                "PROTOCOL_TLSv1_1",
+                "PROTOCOL_TLSv1",
+            ]
+            for protocol in protocols:
+                if hasattr(ssl, protocol):
+                    cls._ssl_version = getattr(ssl, protocol)
+                    logging.debug("SSL / TLS protocol: %s", protocol)
+                    break
+
+            if not cls._ssl_version:
+                raise Error("SSL library does not appear to have TLS support.")
+
+        return cls._ssl_version
+
     if PYTHON_3:
         def _create_socket(self):
             """
@@ -252,9 +277,9 @@ class IMAP4ValidatedSSL(imaplib.IMAP4_SSL):
             unsecured_socket = imaplib.IMAP4._create_socket(self)
             wrapped_socket = ssl.wrap_socket(
                 unsecured_socket,
-                ca_certs=SSL_CERT_FILE,
+                ca_certs=self._get_ca_certs(),
                 cert_reqs=imaplib.ssl.CERT_REQUIRED,
-                ssl_version=SSL_VERSION
+                ssl_version=self._get_ssl_version()
             )
             servercert = wrapped_socket.getpeercert()
             match_hostname(servercert, self.host)
@@ -270,9 +295,9 @@ class IMAP4ValidatedSSL(imaplib.IMAP4_SSL):
             self.sock = socket.create_connection((host, port))
             self.sslobj = ssl.wrap_socket(
                 self.sock,
-                ca_certs=SSL_CERT_FILE,
+                ca_certs=self._get_ca_certs(),
                 cert_reqs=imaplib.ssl.CERT_REQUIRED,
-                ssl_version=SSL_VERSION
+                ssl_version=self._get_ssl_version()
             )
             servercert = self.sslobj.getpeercert()
             match_hostname(servercert, host)
@@ -725,7 +750,6 @@ if __name__ == "__main__":
         )
 
         options = options_from_argv(sys.argv[1:])
-        logging.debug("SSL certificate file: %r", SSL_CERT_FILE)
 
         if options.get("dry_run"):
             logging.warn("This is a dry run; no changes will be applied.")
@@ -758,7 +782,7 @@ if __name__ == "__main__":
 
         if (isinstance(exc, recoverable_exceptions) and
           not UNRECOVERABLE_RESPONSE_REGEX.search(str(exc))):
-            failure_status = EXIT_STATUS_GENERAL_IMAP_ERROR
+            failure_status = EXIT_STATUS_POSSIBLY_RECOVERABLE_ERROR
 
         if isinstance(exc, imaplib.IMAP4.error):
             cls = "IMAPError"
