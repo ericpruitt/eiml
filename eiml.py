@@ -758,8 +758,11 @@ if __name__ == "__main__":
 
     except (Exception, KeyboardInterrupt) as exc:
         failure_status = EXIT_STATUS_UNRECOVERABLE_ERROR
+        recoverable_exceptions = (
+            imaplib.IMAP4.error, IMAPError, socket.error
+        )
 
-        if (isinstance(exc, (imaplib.IMAP4.error, IMAPError)) and
+        if (isinstance(exc, recoverable_exceptions) and
           not UNRECOVERABLE_RESPONSE_REGEX.search(str(exc))):
             failure_status = EXIT_STATUS_GENERAL_IMAP_ERROR
 
@@ -771,7 +774,10 @@ if __name__ == "__main__":
         else:
             cls = exc.__class__.__name__
 
-        if isinstance(exc, (Error, imaplib.IMAP4.error, getopt.GetoptError)):
+        untraced_exceptions = (
+            Error, imaplib.IMAP4.error, getopt.GetoptError, socket.error
+        )
+        if isinstance(exc, untraced_exceptions):
             # The "critical" method is used here because certain types of
             # exceptions can be resolved without seeing the entire stack trace;
             # in addition to logging the stringified error, logging.exception
