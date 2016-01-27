@@ -520,14 +520,8 @@ def main(username, password, labeler=None, source_label="Unprocessed",
     connection = IMAPConnectionExceptionWrapper(connection)
     connection.login(username, password)
 
-    if PYTHON_3:
-        chunk = b" ".join(connection.capability()).decode("ascii")
-    else:
-        chunk = " ".join(connection.capability())
-
-    capabilities = set(chunk.split())
-    logging.debug("Mail server capabilities: %r", capabilities)
-    if "X-GM-EXT-1" not in capabilities:
+    logging.debug("Mail server capabilities: %r", connection.capabilities)
+    if "X-GM-EXT-1" not in connection.capabilities:
         raise IMAPCapabilitiesError("The server lacks Gmail IMAP extensions.")
 
     query = "(UNSEEN)" if ignore_if_read else "ALL"
