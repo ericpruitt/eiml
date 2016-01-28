@@ -177,12 +177,11 @@ class IMAPCapabilitiesError(Error):
 
 class IMAPConnectionExceptionWrapper(object):
     """
-    Class that wraps IMAP connection instances to automatically throw exceptions
-    whenever the server returns any status other than "OK".
+    Class that wraps IMAP connection instances to automatically throw
+    exceptions whenever the server returns any status other than "OK".
     """
     def __init__(self, connection):
         self._connection = connection
-
 
     def __getattr__(self, name):
         may_be_a_function = attr = getattr(self._connection, name)
@@ -241,8 +240,9 @@ class IMAP4ValidatedSSL(imaplib.IMAP4_SSL):
                 logging.debug("CA certificates: %r", cls._ca_certs)
             else:
                 raise Error(
-                    "Unable to locate CA certificates. Please set the environment "
-                    "variable SSL_CERT_FILE to the location of the certificates."
+                    "Unable to locate CA certificates. Please set the "
+                    "SSL_CERT_FILE environment variable to the location of "
+                    "the certificates."
                 )
 
         return cls._ca_certs
@@ -652,7 +652,7 @@ def options_from_argv(argv, allow_log_level_change=True):
     if ("--help", "") in opts or ("-h", "") in opts:
         # Module doc string is the usage string.
         print(__doc__.strip("\r\n"))
-        sys.exit(2 if len(opts) != 1 else 0)
+        sys.exit(EXIT_STATUS_UNRECOVERABLE_ERROR if len(opts) != 1 else 0)
 
     else:
         # Set logging verbosity based on number of -q and -v flags.
@@ -715,7 +715,7 @@ def options_from_argv(argv, allow_log_level_change=True):
                 if callable(labelerfn):
                     options["labeler"] = labelerfn
                 else:
-                    raise TypeError("%s in %r: not callable." % (function, path))
+                    raise TypeError("%s is not callable." % (function_name))
             else:
                 logging.warning("%r: file not found", path)
 
