@@ -600,18 +600,13 @@ def labels_from_subprocess(argv):
             argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
         )
-        stdout, stderr = proc.communicate(message)
+        stdout, _ = proc.communicate(message)
         failure = proc.wait()
 
         if failure:
             labeler = " ".join(map(pipes.quote, argv))
             message = "$(%s) exited with status of %d" % (labeler, failure)
-            stderr = stderr.strip()
-            if stderr:
-                message += ": " + stderr.decode("utf-8", errors="replace")
-
             raise NonZeroExitStatus(message)
 
         for line in stdout.splitlines():
