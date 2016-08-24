@@ -469,8 +469,9 @@ def assign_labels(connection, query, labeler, source_label, dry_run=False,
             label = label.strip()
             assert label, "Label must not be empty."
 
+            label = label.decode("ascii")
             had_label = True
-            logging.info("Label or flag change: %r", label)
+            logging.info("Label or flag change: %s", label)
 
             # "Labels" starting with "+" or "-" are should be treated as
             # flag assignments.
