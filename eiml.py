@@ -502,7 +502,7 @@ def assign_labels(connection, query, labeler, source_label, dry_run=False,
 
         if had_label:
             if dry_run:
-                unlabeled_uids.add(uid)
+                unlabeled_uids.add(int(uid))
 
             else:
                 if move_to_inbox:
@@ -552,7 +552,7 @@ def main(username, password, labeler=None, source_label="Unprocessed",
 
     query = "(UNSEEN)" if ignore_if_read else "ALL"
     unlabeled_uids = set()
-    uidfilter = lambda uid: uid not in unlabeled_uids
+    uidfilter = lambda uid: int(uid) not in unlabeled_uids
 
     if dry_run and auto_archive:
         auto_archive = False
