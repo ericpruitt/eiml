@@ -107,6 +107,11 @@ import sys
 import tempfile
 import time
 
+try:
+    timer = time.monotonic
+except AttributeError:
+    timer = time.time
+
 DEFAULT_LOG_LEVEL = "INFO"
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 assert DEFAULT_LOG_LEVEL in LOG_LEVELS, "Invalid value for DEFAULT_LOG_LEVEL."
@@ -596,6 +601,7 @@ def labels_from_subprocess(argv):
     """
     def subprocess_labeler(message):
         logging.debug("Launching subprocess: %r", argv)
+        start = timer()
         proc = subprocess.Popen(
             argv,
             stdin=subprocess.PIPE,
@@ -603,6 +609,12 @@ def labels_from_subprocess(argv):
         )
         stdout, _ = proc.communicate(message)
         failure = proc.wait()
+        duration = timer() - start
+        logging.info(
+            "Subprocess execution duration: %f (%g Hz)",
+            duration,
+            1.0 / duration
+        )
 
         if failure:
             labeler = " ".join(map(pipes.quote, argv))
