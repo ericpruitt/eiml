@@ -611,8 +611,8 @@ def labels_from_subprocess(argv):
         failure = proc.wait()
         duration = timer() - start
         logging.info(
-            "Subprocess execution duration: %f (%g Hz)",
-            duration,
+            "Subprocess execution duration: %f ms (%g Hz)",
+            duration * 1000,
             1.0 / duration
         )
 
