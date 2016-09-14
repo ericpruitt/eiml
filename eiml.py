@@ -807,7 +807,9 @@ if __name__ == "__main__":
         # Remove password from logging output.
         options_censored = dict(options)
         options_censored["password"] = "<censored>"
-        arguments = ("%s=%r" % (k, v) for k, v in options_censored.items())
+        arguments = tuple(
+            "%s=%r" % (k, v) for k, v in options_censored.items()
+        )
 
         while True:
             try:
