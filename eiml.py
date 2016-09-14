@@ -17,17 +17,19 @@ Extended-IMAP Message Labeler (EIML) simplifies programmatic organization of
 emails on servers that support Gmail's label extensions.
 
 Usage: eiml.py [OPTION...] LABELER
-       eiml.py --auto-archive [OPTION...]
+       eiml.py --auto-archive-delay=NUMBER [OPTION...]
 
 Options:
- --auto-archive             When specified, all messages in the Inbox that have
-                            been read will be archived at the end of each
-                            message processing cycle. When no labeler is
-                            specified, this flag must be set.
+ --auto-archive-delay=NUMBER
+                            When specified, all messages in the Inbox that have
+                            been marked read for at least this amount of
+                            seconds will archived at the end of each message
+                            processing cycle. When no labeler is specified,
+                            this option must be set.
 
  --dry-run                  When set, labels returned by the labeler will not
-                            applied to messages, and the "--auto-archive" flag
-                            is ignored.
+                            applied to messages, and the "--auto-archive-delay"
+                            option is ignored.
 
  -h, --help                 Show this documentation and exit.
 
@@ -81,7 +83,8 @@ invocation could also look like this:
 The shell used is determined by the `SHELL` environment variable and defaults
 to `/bin/sh` when the environment variable is not set.
 
-If no labeler is specified, the "--auto-archive" flag must be specified.
+If no labeler is specified, the "--auto-archive-delay" option must be
+specified.
 
 EIML will exit with a status of 2 if there is an error that likely cannot be
 resolved without human intervention such as incorrect login information or
@@ -97,6 +100,7 @@ import getpass
 import imaplib
 import imp
 import logging
+import math
 import os
 import pipes
 import re
@@ -367,12 +371,17 @@ def header_to_string(raw_header):
     return str(header) if PYTHON_3 else unicode(header)
 
 
-def archive_read_messages(connection):
+def archive_read_messages(connection, minimum_delay, read_times=None):
     """
     Archive any messages that have been read.
 
     Arguments:
       connection: An IMAP connection instance.
+      minimum_delay: Minimum amount of time in seconds that must have passed
+        before a read message is archived.
+      read_times: A dictionary used to track when messages were read. If
+        minimum_delay is less than or equal to 0, this parameter is not
+        required.
 
     Returns:
       Set containing the UIDs of all archived messages.
@@ -386,13 +395,34 @@ def archive_read_messages(connection):
     else:
         uids = set(" ".join(data).split())
 
+    # Stop tracking messages that were archived by something else.
+    if read_times:
+        for uid in tuple(read_times.keys()):
+            if uid not in uids:
+                logging.debug("Message archived by external process: %s", uid)
+                del read_times[uid]
+
+    if uids and minimum_delay > 0:
+        now = timer()
+
+        for uid in tuple(uids):
+            age = now - read_times.setdefault(uid, now)
+            time_remaining = minimum_delay - age
+            if time_remaining > 0:
+                logging.debug(
+                    "Message %s not ready to be archived: %is remain",
+                    uid,
+                    math.ceil(time_remaining)
+                )
+                uids.remove(uid)
+            else:
+                del read_times[uid]
+
     if uids:
         connection.uid("STORE", ",".join(uids), "FLAGS", "\\Deleted")
         uidcount = len(uids)
         schar = "s" if uidcount != 1 else ""
         logging.info("Archived %d message%s: %r", uidcount, schar, uids)
-    else:
-        logging.debug("No messages in Inbox matching query: %r", query)
 
     return set(map(int, uids))
 
@@ -530,7 +560,7 @@ def assign_labels(connection, query, labeler, source_label, dry_run=False,
 
 
 def main(username, password, labeler=None, source_label="Unprocessed",
- polling_period=5, ignore_if_read=False, auto_archive=False,
+ polling_period=5, ignore_if_read=False, auto_archive_delay=None,
   host="imap.gmail.com", dry_run=False):
     """
     Poll and organize messages in a Gmail account.
@@ -546,6 +576,8 @@ def main(username, password, labeler=None, source_label="Unprocessed",
         been read will be ignored.
       source_label: Label that contains messages that should be enumerated for
         labeling.
+      auto_archive_delay: Minimum of seconds to wait before archiving a message
+        after is was read.
     """
     connection = IMAP4ValidatedSSL(host)
     connection = IMAPConnectionExceptionWrapper(connection)
@@ -559,9 +591,11 @@ def main(username, password, labeler=None, source_label="Unprocessed",
     unlabeled_uids = set()
     uidfilter = lambda uid: int(uid) not in unlabeled_uids
 
-    if dry_run and auto_archive:
-        auto_archive = False
+    if dry_run and auto_archive_delay is not None:
+        auto_archive_delay = None
         logging.warn("Auto-archive does nothing in dry-run mode.")
+
+    read_times = dict()
 
     while True:
         if labeler:
@@ -576,8 +610,8 @@ def main(username, password, labeler=None, source_label="Unprocessed",
               )
             )
 
-        if auto_archive:
-            archive_read_messages(connection)
+        if auto_archive_delay is not None:
+            archive_read_messages(connection, auto_archive_delay, read_times)
 
         logging.debug("Sleep duration: %r", polling_period)
         time.sleep(polling_period)
@@ -645,7 +679,7 @@ def options_from_argv(argv, allow_log_level_change=True):
       Dictionary that can be used to set keyword arguments of `main` function.
     """
     longopts = [
-        "auto-archive",
+        "auto-archive-delay=",
         "dry-run",
         "help",
         "host=",
@@ -686,8 +720,8 @@ def options_from_argv(argv, allow_log_level_change=True):
     elif tail:
         extra_args = " ".join(map(pipes.quote, tail[1:]))
         raise Error("Unexpected arguments: %s" % (extra_args,))
-    elif "auto_archive" not in options:
-        raise Error("If no labeler is specified, --auto-archive must be set.")
+    elif "auto_archive_delay" not in options:
+        raise Error("No labeler defined, and --auto-archive-delay is not set.")
 
     try:
         options["polling_period"] = float(options["polling_period"])
@@ -738,7 +772,15 @@ def options_from_argv(argv, allow_log_level_change=True):
             logging.info("Labeler command: %s", shell_script)
             options["labeler"] = labels_from_subprocess(argv)
 
-    options["auto_archive"] = "auto_archive" in options
+    try:
+        if "auto_archive_delay" in options:
+            delay = float(options["auto_archive_delay"])
+            if delay < 0:
+                raise ValueError("Delay is negative.")
+            options["auto_archive_delay"] = delay
+    except ValueError:
+        raise Error("The --auto-archive-delay value must be a number >= 0.")
+
     options["dry_run"] = "dry_run" in options
     options["ignore_if_read"] = "ignore_if_read" in options
     return options
