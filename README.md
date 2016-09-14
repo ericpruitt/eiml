@@ -133,7 +133,7 @@ Options
 ### --auto-archive-delay=NUMBER ###
 
 When specified, all messages in the Inbox that have been marked read for at
-least this amount of seconds will archived at the end of each message
+least this amount of seconds will be archived at the end of each message
 processing cycle. When no labeler is specified, this option must be set.
 
 ### --dry-run  ###
