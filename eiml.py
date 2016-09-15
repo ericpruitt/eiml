@@ -832,6 +832,9 @@ if __name__ == "__main__":
             imaplib.IMAP4.error, IMAPError, socket.error
         )
 
+        if PYTHON_3:
+            recoverable_exceptions += (ConnectionResetError,)
+
         if (isinstance(exc, recoverable_exceptions) and
           not UNRECOVERABLE_RESPONSE_REGEX.search(str(exc))):
             failure_status = EXIT_STATUS_POSSIBLY_RECOVERABLE_ERROR
