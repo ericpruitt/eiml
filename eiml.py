@@ -125,6 +125,8 @@ PYTHON_3 = sys.version_info.major > 2
 EXIT_STATUS_POSSIBLY_RECOVERABLE_ERROR = 1
 EXIT_STATUS_UNRECOVERABLE_ERROR = 2
 
+X_GM_THRID_REGEX = re.compile(br"\bX-GM-THRID (\S+)\b")
+
 UNRECOVERABLE_RESPONSES = {"AUTHENTICATIONFAILED", "NONEXISTENT"}
 UNRECOVERABLE_RESPONSE_REGEX = re.compile(
     "\[(" + "|".join(map(re.escape, UNRECOVERABLE_RESPONSES)) + ")\]"
@@ -427,6 +429,31 @@ def archive_read_messages(connection, minimum_delay, read_times=None):
     return set(map(int, uids))
 
 
+def imap_any(conditions):
+    """
+    Generate an IMAP query expression that will match any of the expressions in
+    `conditions`.
+
+    In IMAP, both operands used by the OR operator appear after the OR, and
+    chaining ORs can create very verbose, hard to parse queries e.g. "OR OR OR
+    X-GM-THRID 111 X-GM-THRID 222 OR X-GM-THRID 333 X-GM-THRID 444 X-GM-THRID
+    555". Using logical equivalence, a functionally identical query can be
+    built with "AND" and "NOT"; (a || b || c...) == !(!a && !b && !c...).
+
+    Arguments:
+      conditions: List of IMAP expressions.
+
+    Returns:
+      An IMAP expression that evaluates to "true" if any of the conditions are
+      true.
+    """
+    if not conditions:
+        return ""
+
+    negations = [("NOT %s" % condition) for condition in conditions]
+    return "(NOT (%s))" % " ".join(negations)
+
+
 def assign_labels(connection, query, labeler, source_label, dry_run=False,
   uidfilter=None):
     """
@@ -465,6 +492,39 @@ def assign_labels(connection, query, labeler, source_label, dry_run=False,
     if not uids:
         return set()
 
+    # The thread IDs of all of the messages are retrieved so they can be used
+    # to see if there are muted messages in those threads.
+    thread_ids = set()
+    for result in connection.fetch("1:*", "(X-GM-THRID)"):
+        thread_ids.add(X_GM_THRID_REGEX.search(result).groups()[0])
+
+    logging.info("Threads with pending messages: %r", list(thread_ids))
+
+    # Return UIDs of any muted messages in the same threads as the unprocessed
+    # messages.
+    connection.select("\"[Gmail]/All Mail\"")
+    conditions = [("X-GM-THRID %d" % int(tid)) for tid in thread_ids]
+    in_pending_threads = imap_any(conditions)
+    data = connection.uid("SEARCH", "X-GM-RAW", "is:muted", in_pending_threads)
+    muted_uids = b" ".join(data).split()
+
+    # Get the UIDs of the muted threads.
+    muted_thread_ids = set()
+    if muted_uids:
+        imap_uid_list = b",".join(muted_uids)
+        for result in connection.uid("FETCH", imap_uid_list, "X-GM-THRID"):
+            muted_thread_ids.add(X_GM_THRID_REGEX.search(result).groups()[0])
+
+        logging.info("Muted threads: %r", muted_thread_ids)
+
+    # The IMAP standard does not require UIDs to be the same between sessions
+    # (https://tools.ietf.org/html/rfc3501#section-2.3.1.1), so retrieve the
+    # list again. This introduces a race condition, but as with the other race
+    # conditions in this project, the consequences of it are negligible.
+    connection.select(source_label)
+    data = connection.uid("SEARCH", None, query)
+    uids = set(b" ".join(data).split())
+
     unlabeled_uids = set()
     count = 0
     for count, uid in enumerate(filter(uidfilter, sorted(uids, key=int)), 1):
@@ -472,11 +532,14 @@ def assign_labels(connection, query, labeler, source_label, dry_run=False,
 
         # (BODY.PEEK[]) fetches the message without marking it SEEN.
         logging.info("Fetching message: %s", uid)
-        response = connection.uid("FETCH", uid, "(BODY.PEEK[])")
+        response = connection.uid("FETCH", uid, "(BODY.PEEK[] X-GM-THRID)")
 
         if not response[0]:
             logging.warn("No message data returned by server.")
             continue
+
+        thread_id = X_GM_THRID_REGEX.search(response[0][0]).groups()[0]
+        is_muted = thread_id in muted_thread_ids
 
         had_label = False
         message = response[0][1]
@@ -498,7 +561,9 @@ def assign_labels(connection, query, labeler, source_label, dry_run=False,
         except ValueError:
             subject = "(subject could not be parsed)"
 
-        logging.info("Retrieved %.1fKiB message: %s", kib, subject)
+        logging.info(
+            "Retrieved %.1fKiB message, THRID %s: %s", kib, thread_id, subject
+        )
 
         for label in labeler(message):
             label = label.strip()
@@ -529,7 +594,10 @@ def assign_labels(connection, query, labeler, source_label, dry_run=False,
             # added benefit of ensuring a message's labels are visible
             # before the end-user sees the message.
             elif label.upper() == "INBOX":
-                move_to_inbox = True
+                if is_muted:
+                    logging.info("Message in muted thread; inbox skipped")
+                else:
+                    move_to_inbox = True
 
             # Use Gmail"s IMAP extension to assign labels to messages.
             elif not dry_run:
