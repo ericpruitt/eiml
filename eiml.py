@@ -586,7 +586,10 @@ def assign_labels(connection, query, labeler, source_label, dry_run=False,
                 if normalized_flag in SYSTEM_IMAP_FLAGS:
                     flag = "\\" + normalized_flag
 
-                if not dry_run:
+                if flag == "\\Seen" and is_muted:
+                    logging.info("Message in muted thread; flag ignored")
+
+                elif not dry_run:
                     connection.uid("STORE", uid, sign + "FLAGS", flag)
 
             # The inbox requires special treatment, so inbox assignment is
@@ -610,6 +613,8 @@ def assign_labels(connection, query, labeler, source_label, dry_run=False,
             else:
                 if move_to_inbox:
                     connection.uid("COPY", uid, "INBOX")
+                elif is_muted:
+                    connection.uid("STORE", uid, "FLAGS", "\\Seen")
 
                 # Marking a message "Deleted" while having a label SELECT-ed
                 # simply removes the SELECT-ed label from that message.
