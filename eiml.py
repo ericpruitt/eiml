@@ -125,6 +125,13 @@ PYTHON_3 = sys.version_info.major > 2
 EXIT_STATUS_POSSIBLY_RECOVERABLE_ERROR = 1
 EXIT_STATUS_UNRECOVERABLE_ERROR = 2
 
+# TODO: figure out why the IMAP library does not quote labels that contain
+# characters that make them invalid literals e.g. spaces.
+IMAP_SPECIAL_CHARACTERS = set(
+    ["(", ")", "{", "}", " ", '"', "%", "*", "[", "]"] +
+    [chr(c) for c in range(0x00, 0x20)]
+)
+
 X_GM_THRID_REGEX = re.compile(br"\bX-GM-THRID (\S+)\b")
 
 UNRECOVERABLE_RESPONSES = {"AUTHENTICATIONFAILED", "NONEXISTENT"}
@@ -572,6 +579,10 @@ def assign_labels(connection, query, labeler, source_label, dry_run=False,
             label = label.decode("ascii")
             had_label = True
             logging.info("Label or flag change: %s", label)
+
+            if IMAP_SPECIAL_CHARACTERS & set(label):
+                label = ('("' +
+                    label.replace("\\", "\\\\").replace('"', '\\"') + '")')
 
             # "Labels" starting with "+" or "-" are should be treated as
             # flag assignments.
