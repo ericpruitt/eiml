@@ -549,7 +549,7 @@ def assign_labels(connection, query, labeler, source_label, dry_run=False,
         is_muted = thread_id in muted_thread_ids
 
         had_label = False
-        message = response[0][1]
+        message = response[0][1].replace("\r\n", "\n")
         move_to_inbox = False
         kib = len(message) / 1024
 
